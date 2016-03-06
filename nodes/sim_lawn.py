@@ -14,6 +14,9 @@ from visualization_msgs.msg import MarkerArray
 from visualization_msgs.msg import Marker
 from std_msgs.msg import ColorRGBA
 from tf.transformations import euler_from_quaternion
+import eliminator.msg
+import actionlib
+
 
 class Sim(object):
     """docstring for Sim"""
@@ -25,6 +28,12 @@ class Sim(object):
         self.boundary_pub = rospy.Publisher('/boundary', Int32, queue_size=10)
         self.weed_pub = rospy.Publisher('/weed_location', Pose2D, queue_size=10)
         # cam_view_pub = rospy.Publisher('/camera_box', Marker, queue_size = 0)
+        
+        self.feedback = eliminator.msg.eliminationFeedback()
+        self.result   = eliminator.msg.eliminationResult()
+        self.action_name = "eliminate"
+        self.action_server = actionlib.SimpleActionServer(self.action_name, eliminator.msg.eliminationAction, execute_cb=self.elimination_sim, auto_start = False)
+        self.action_server.start();
         self.transformer = tf.TransformListener()
         
         self.cellsize = .15
@@ -74,8 +83,7 @@ class Sim(object):
 
         for i in xrange(0,self.map.shape[0]):
             for j in xrange(0,self.map.shape[1]):
-                x = (i-(self.length/2.0))*self.cellsize
-                y = (j-(self.width/2.0))*self.cellsize
+                (x,y) = self.grid2point(i,j)
                 p = Point(x,y,0)
 
                 if(self.map[i,j] == 1):
@@ -150,25 +158,37 @@ class Sim(object):
 
         self.scan_points(p0,p1);
 
+    def grid2point(self,i,j):
+        x = (i)*self.cellsize
+        y = (j)*self.cellsize
+        return(x,y)
+
+    def point2grid(self,x,y):
+        i = int(round(x/self.cellsize))
+        j = int(round(y/self.cellsize))
+        return(i,j)
+
+    def get_marker_index(self,i,j):
+        index = i*self.map.shape[1] + j
+        return index
+
     def scan_points(self,p0,p1):
         scan_num = 5
         xpts = np.linspace(p0.x,p1.x,scan_num)
         ypts = np.linspace(p0.y,p1.y,scan_num)
         all_points_in_boundary = True;
         for k in xrange(0,scan_num):
-            i = int(round(xpts[k]/self.cellsize + self.length/2.0));
-            j = int(round(ypts[k]/self.cellsize + self.width/2.0));
+            (i,j) = self.point2grid(xpts[k],ypts[k]);
             
-
-
             idx = self.get_marker_index(i,j);
             if(0<=i<self.map.shape[0] and 0<=j<self.map.shape[1]):
                 self.m.colors[idx].a = 1
                 if(self.map[i,j]==1):
-                    print("Weed at (%f,%f)",xpts[k],ypts[k])
+                    print("Weed at (%f,%f)" % (xpts[k],ypts[k]))
+                    (xg,yg) = self.grid2point(i,j)
                     p = Pose2D()
-                    p.x = xpts[k];
-                    p.y = ypts[k];
+                    p.x = xg;
+                    p.y = yg;
                     p.theta = 0;
                     self.m.colors[idx].r = 1
                     # self.m.colors[idx].g = 0
@@ -182,9 +202,30 @@ class Sim(object):
             self.boundary_pub.publish(0);
 
             
-    def get_marker_index(self,i,j):
-        index = i*self.map.shape[1] + j
-        return index
+
+
+    def elimination_sim(self,goal):
+        try:
+            (trans,rot) = self.transformer.lookupTransform('/world', '/robot', rospy.Time(0))
+        except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
+            print("Failed to lookup transfrom between eliminator and world")
+
+        
+
+        (i,j) = self.point2grid(trans[0],trans[1])
+        idx = self.get_marker_index(i,j);
+
+        print("DRILLING WEED AT %f %f" % self.grid2point(i,j))
+        if(self.map[i,j] == 1):
+            self.map[i,j] = 0;
+            self.m.colors[idx].r = 0
+            self.m.colors[idx].g = 1
+            self.result.success = 1;
+        else:
+            self.result.success = 0;
+
+        self.action_server.set_succeeded(self.result)
+
 
 if __name__ == '__main__':
     length = 25;
