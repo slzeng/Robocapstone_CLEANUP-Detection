@@ -154,7 +154,7 @@ class Sim(object):
         scan_num = 5
         xpts = np.linspace(p0.x,p1.x,scan_num)
         ypts = np.linspace(p0.y,p1.y,scan_num)
-
+        all_points_in_boundary = True;
         for k in xrange(0,scan_num):
             i = int(round(xpts[k]/self.cellsize + self.length/2.0));
             j = int(round(ypts[k]/self.cellsize + self.width/2.0));
@@ -170,10 +170,16 @@ class Sim(object):
                     p.x = xpts[k];
                     p.y = ypts[k];
                     p.theta = 0;
+                    self.m.colors[idx].r = 1
+                    # self.m.colors[idx].g = 0
                     self.weed_pub.publish(p)
-                    
+
             else:
+                all_points_in_boundary = False
                 self.boundary_pub.publish(1);
+
+        if(all_points_in_boundary):
+            self.boundary_pub.publish(0);
 
             
     def get_marker_index(self,i,j):
@@ -181,7 +187,7 @@ class Sim(object):
         return index
 
 if __name__ == '__main__':
-    length = 20;
-    width = 30;
+    length = 25;
+    width = 25;
     weed_density = 1;
     s = Sim(length, width, weed_density);
