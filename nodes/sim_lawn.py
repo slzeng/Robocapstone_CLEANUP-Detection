@@ -36,13 +36,15 @@ class Sim(object):
         self.action_server.start();
         self.transformer = tf.TransformListener()
         
+        self.num_explored = 0;
+
         self.cellsize = .15
         self.length = round(length/self.cellsize)
         self.width = round(width/self.cellsize)
         self.weed_density = weed_density
 
         self.camera_fov_x = .2
-        self.camera_fov_y = .4
+        self.camera_fov_y = .3937
         self.camera_height = .4
 
         self.cam_points = []
@@ -52,12 +54,21 @@ class Sim(object):
         count = 0;
 
         self.generate_scan_area()
+        start_time = rospy.Time.now();
         while not rospy.is_shutdown():
-            if(count % 30):
+            if((count % 4 == 0)):
+                
                 lawn_pub.publish(self.m)
                 count = 0
+            current_time = rospy.Time.now();
+            print("Coverage: %.2f/%.2f [m^2] = %.3f%% Coverage Rate: %.2f [m^2/hr]"
+                % (self.cellsize**2*self.num_explored,
+                self.cellsize**2*self.map.size,
+                100*float(self.num_explored)/self.map.size,
+                60*60*self.cellsize**2*self.num_explored/((current_time-start_time).to_sec())))
+            
             count +=1
-            # self.sim_camera()
+            # self.sim_camera(
             self.update_scan()
             self.cam_point_pub.publish(self.cam_marker)
             rate.sleep()
@@ -173,16 +184,18 @@ class Sim(object):
         return index
 
     def scan_points(self,p0,p1):
-        scan_num = 5
+        scan_num = 6
         xpts = np.linspace(p0.x,p1.x,scan_num)
         ypts = np.linspace(p0.y,p1.y,scan_num)
         all_points_in_boundary = True;
-        for k in xrange(0,scan_num):
+        for k in xrange(1,scan_num-1):
             (i,j) = self.point2grid(xpts[k],ypts[k]);
             
             idx = self.get_marker_index(i,j);
             if(0<=i<self.map.shape[0] and 0<=j<self.map.shape[1]):
-                self.m.colors[idx].a = 1
+                if(self.m.colors[idx].a != 1):
+                    self.m.colors[idx].a = 1
+                    self.num_explored += 1;
                 if(self.map[i,j]==1):
                     print("Weed at (%f,%f)" % (xpts[k],ypts[k]))
                     (xg,yg) = self.grid2point(i,j)
@@ -192,14 +205,15 @@ class Sim(object):
                     p.theta = 0;
                     self.m.colors[idx].r = 1
                     # self.m.colors[idx].g = 0
-                    self.weed_pub.publish(p)
+                    # self.weed_pub.publish(p)
 
             else:
                 all_points_in_boundary = False
-                self.boundary_pub.publish(1);
+                # self.boundary_pub.publish(1);
 
         if(all_points_in_boundary):
-            self.boundary_pub.publish(0);
+            pass
+            # self.boundary_pub.publish(0);
 
             
 
